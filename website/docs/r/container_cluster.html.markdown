@@ -388,6 +388,10 @@ exported:
     be different than the `min_master_version` set in the config if the master
     has been updated by GKE.
 
+* `kube_config_raw` - Raw Kubernetes config to be used by
+    [kubectl](https://kubernetes.io/docs/reference/kubectl/overview/) and
+    other compatible tools
+
 <a id="timeouts"></a>
 ## Timeouts
 
