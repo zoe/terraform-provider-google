@@ -43,29 +43,7 @@ func resourceBigtableInstance() *schema.Resource {
 				Optional:      true,
 				MaxItems:      1,
 				ConflictsWith: []string{"cluster_id", "zone", "num_nodes", "storage_type"},
-				Elem: &schema.Resource{
-					Schema: map[string]*schema.Schema{
-						"cluster_id": {
-							Type:     schema.TypeString,
-							Optional: true,
-						},
-						"zone": {
-							Type:     schema.TypeString,
-							Optional: true,
-							Computed: true,
-						},
-						"num_nodes": {
-							Type:     schema.TypeInt,
-							Optional: true,
-						},
-						"storage_type": {
-							Type:         schema.TypeString,
-							Optional:     true,
-							Default:      "SSD",
-							ValidateFunc: validation.StringInSlice([]string{"SSD", "HDD"}, false),
-						},
-					},
-				},
+				Elem:          resourceBigtableInstanceClusterSchema(),
 			},
 
 			"zone": {
@@ -118,14 +96,44 @@ func resourceBigtableInstance() *schema.Resource {
 	}
 }
 
+func resourceBigtableInstanceClusterSchema() *schema.Resource {
+	return &schema.Resource{
+		Schema: map[string]*schema.Schema{
+			"cluster_id": {
+				Type:     schema.TypeString,
+				Required: true,
+			},
+			"zone": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+			},
+			"num_nodes": {
+				Type:     schema.TypeInt,
+				Optional: true,
+			},
+			"storage_type": {
+				Type:         schema.TypeString,
+				Optional:     true,
+				Default:      "SSD",
+				ValidateFunc: validation.StringInSlice([]string{"SSD", "HDD"}, false),
+			},
+		},
+	}
+}
+
 func resourceBigTableInstanceClusterCustomizeDiff(d *schema.ResourceDiff, meta interface{}) error {
+	log.Printf("[DEBUG] entering customizediff")
 	if d.Get("cluster_id").(string) == "" && d.Get("cluster.#").(int) == 0 {
 		return fmt.Errorf("At least one cluster must be set.")
 	}
 	if !d.HasChange("cluster_id") && !d.HasChange("zone") && !d.HasChange("num_nodes") &&
 		!d.HasChange("storage_type") && !d.HasChange("cluster") {
+		log.Printf("[DEBUG] hahahaha")
 		return nil
 	}
+
+	log.Printf("[DEBUG] at if statement")
 	if d.Get("cluster.#").(int) == 1 {
 		// if we have exactly one cluster, and it has the same values as the old top-level
 		// values, we can assume the user is trying to go from the deprecated values to the
@@ -141,9 +149,34 @@ func resourceBigTableInstanceClusterCustomizeDiff(d *schema.ResourceDiff, meta i
 			oldNodes.(int) == new["num_nodes"].(int) &&
 			oldZone.(string) == new["zone"].(string) &&
 			oldStorageType.(string) == new["storage_type"].(string) {
+			log.Printf("[DEBUG] safe exit for cluster")
 			return nil
 		}
+
+		log.Printf("[DEBUG] comparing cluster")
+		oldSchema, newSchema := d.GetChange("cluster")
+		log.Printf("[DEBUG] schemas: %v \n schemas: %v", oldSchema, newSchema)
+		if oldSchema != nil && newSchema != nil && len(oldSchema.(*schema.Set).List()) > 0 && len(newSchema.(*schema.Set).List()) > 0 {
+			old := oldSchema.(*schema.Set).List()[0].(map[string]interface{})
+			newMap := newSchema.(*schema.Set).List()[0].(map[string]interface{})
+			hash := schema.HashResource(resourceBigtableInstanceClusterSchema())(newMap)
+			log.Printf("[DEBUG] computed cluster hash of %v", hash)
+			if old["cluster_id"] != newMap["cluster_id"] {
+				return d.ForceNew(fmt.Sprintf("cluster.%d.cluster_id", hash))
+			}
+			if old["zone"] != newMap["zone"] {
+				return d.ForceNew(fmt.Sprintf("cluster.%d.zone", hash))
+			}
+			if old["num_nodes"] != newMap["num_nodes"] {
+				return d.ForceNew(fmt.Sprintf("cluster.%d.num_nodes", hash))
+			}
+			if old["storage_type"] != newMap["storage_type"] {
+				return d.ForceNew(fmt.Sprintf("cluster.%d.storage_type", hash))
+			}
+		}
+
 	}
+
 	if d.HasChange("cluster_id") {
 		d.ForceNew("cluster_id")
 	}
